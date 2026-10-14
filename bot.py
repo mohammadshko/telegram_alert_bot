@@ -1,5 +1,6 @@
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 from storage import JSONStorage
 from alert_processor import extract_hashtags, get_matching_users
@@ -114,11 +115,12 @@ async def subscriptions_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def subscription_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+    if not query:
+        return
 
     user_id = update.effective_user.id
     storage: JSONStorage = context.bot_data["storage"]
-    data = query.data
+    data = query.data or ""
 
     if data.startswith("toggle_sub:"):
         tag = data.split("toggle_sub:", 1)[1]
@@ -126,14 +128,21 @@ async def subscription_callback_handler(update: Update, context: ContextTypes.DE
 
         if tag in user_subs:
             storage.remove_subscriptions(user_id, [tag])
+            toast_text = f"Unsubscribed from #{tag}"
         else:
             storage.add_subscriptions(user_id, [tag])
+            toast_text = f"Subscribed to #{tag}"
+
+        await query.answer(text=toast_text)
 
         reply_markup = build_subscription_keyboard(user_id, storage)
-        await query.edit_message_text(
-            "Your Subscriptions (click to toggle):",
-            reply_markup=reply_markup,
-        )
+        try:
+            await query.edit_message_reply_markup(reply_markup=reply_markup)
+        except BadRequest as e:
+            if "Message is not modified" not in str(e):
+                logger.error(f"Error updating inline keyboard: {e}")
+    else:
+        await query.answer()
 
 async def channel_post_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
