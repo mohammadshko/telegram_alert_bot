@@ -3,6 +3,7 @@ import sys
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
+    CallbackQueryHandler,
     MessageHandler,
     filters,
 )
@@ -15,6 +16,7 @@ from bot import (
     subscribe_handler,
     unsubscribe_handler,
     subscriptions_handler,
+    subscription_callback_handler,
     channel_post_handler,
     check_channel_alerts_job,
 )
@@ -43,6 +45,9 @@ def main():
     application.add_handler(CommandHandler("subscribe", subscribe_handler))
     application.add_handler(CommandHandler("unsubscribe", unsubscribe_handler))
     application.add_handler(CommandHandler("subscriptions", subscriptions_handler))
+
+    # Register callback query handler for inline subscription buttons
+    application.add_handler(CallbackQueryHandler(subscription_callback_handler))
 
     # Register channel post handler (for channel updates)
     application.add_handler(MessageHandler(filters.ChatType.CHANNEL, channel_post_handler))

@@ -1,5 +1,5 @@
 import logging
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from storage import JSONStorage
 from alert_processor import extract_hashtags, get_matching_users
@@ -7,28 +7,59 @@ import config
 
 logger = logging.getLogger(__name__)
 
+# Default list of common/available alert tags that users can toggle via inline buttons
+AVAILABLE_TAGS = [
+    "node_alerts_app",
+    "node_alerts_fetcher",
+    "disk_alert_cons1",
+    "disk_alert_cons2",
+]
+
+def build_subscription_keyboard(user_id: int, storage: JSONStorage) -> InlineKeyboardMarkup:
+    """
+    Builds an InlineKeyboardMarkup displaying all available subscription tags.
+    Each button shows whether the user is currently subscribed (✅) or not (❌).
+    Also includes any custom tags the user has manually subscribed to.
+    """
+    user_subs = storage.get_subscriptions(user_id)
+
+    # Combine standard available tags and any custom tags user subscribed to
+    all_tags = sorted(list(set(AVAILABLE_TAGS) | user_subs))
+
+    keyboard = []
+    for tag in all_tags:
+        is_subscribed = tag in user_subs
+        status_symbol = "✅" if is_subscribed else "❌"
+        button_text = f"{status_symbol} #{tag}"
+        callback_data = f"toggle_sub:{tag}"
+        keyboard.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
+
+    return InlineKeyboardMarkup(keyboard)
+
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    storage: JSONStorage = context.bot_data["storage"]
     welcome_text = (
         "Welcome to the Alert Notification Bot!\n\n"
         "I monitor the channel for alert messages containing hashtags and send you alerts you've subscribed to.\n\n"
-        "Available commands:\n"
-        "/subscribe <tag1> <tag2> - Subscribe to alert hashtags (e.g. /subscribe node_alerts_app disk_alert_cons1)\n"
-        "/unsubscribe <tag1> <tag2> - Unsubscribe from alert hashtags\n"
-        "/subscriptions - View your active subscriptions\n"
-        "/help - Show this help message"
+        "Click the buttons below to toggle your alert subscriptions, or use commands:\n"
+        "/subscribe <tag> - Subscribe to custom tags\n"
+        "/unsubscribe <tag> - Unsubscribe from tags\n"
+        "/subscriptions - View & manage subscriptions with buttons\n"
+        "/help - Show help message"
     )
-    await update.message.reply_text(welcome_text)
+    reply_markup = build_subscription_keyboard(user_id, storage)
+    await update.message.reply_text(welcome_text, reply_markup=reply_markup)
 
 async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
-        "Command Reference:\n\n"
-        "/subscribe <tag1> <tag2> ... - Subscribe to alert tags (with or without #)\n"
-        "  Example: /subscribe node_alerts_app disk_alert_cons1\n\n"
-        "/unsubscribe <tag1> <tag2> ... - Remove tag subscriptions\n"
-        "  Example: /unsubscribe node_alerts_app\n\n"
-        "/subscriptions - View your current subscribed tags\n\n"
-        "/help - Show help instructions"
+        "Command & Button Reference:\n\n"
+        "• Click buttons under /subscriptions or /start to toggle subscriptions on/off.\n"
+        "• /subscribe <tag1> <tag2> - Subscribe to alert tags (with or without #)\n"
+        "  Example: /subscribe node_alerts_app disk_alert_cons1\n"
+        "• /unsubscribe <tag1> <tag2> - Remove tag subscriptions\n"
+        "  Example: /unsubscribe node_alerts_app\n"
+        "• /subscriptions - Manage your active subscriptions using interactive buttons"
     )
     await update.message.reply_text(help_text)
 
@@ -38,16 +69,18 @@ async def subscribe_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tags = context.args
 
     if not tags:
+        reply_markup = build_subscription_keyboard(user_id, storage)
         await update.message.reply_text(
-            "Please specify at least one tag to subscribe to.\n"
-            "Example: /subscribe node_alerts_app disk_alert_cons1"
+            "Select the alert topics you want to subscribe to:",
+            reply_markup=reply_markup,
         )
         return
 
     updated_subs = storage.add_subscriptions(user_id, tags)
-    formatted_tags = ", ".join([f"#{t}" for t in sorted(updated_subs)])
+    reply_markup = build_subscription_keyboard(user_id, storage)
     await update.message.reply_text(
-        f"Subscription updated successfully!\nYour active subscriptions: {formatted_tags}"
+        "Subscription updated successfully!",
+        reply_markup=reply_markup,
     )
 
 async def unsubscribe_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -56,31 +89,51 @@ async def unsubscribe_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     tags = context.args
 
     if not tags:
+        reply_markup = build_subscription_keyboard(user_id, storage)
         await update.message.reply_text(
-            "Please specify at least one tag to unsubscribe from.\n"
-            "Example: /unsubscribe node_alerts_app"
+            "Select the alert topics to toggle/unsubscribe:",
+            reply_markup=reply_markup,
         )
         return
 
     updated_subs = storage.remove_subscriptions(user_id, tags)
-    if updated_subs:
-        formatted_tags = ", ".join([f"#{t}" for t in sorted(updated_subs)])
-        await update.message.reply_text(
-            f"Unsubscribed specified tags.\nYour remaining subscriptions: {formatted_tags}"
-        )
-    else:
-        await update.message.reply_text("Unsubscribed specified tags.\nYou currently have no active subscriptions.")
+    reply_markup = build_subscription_keyboard(user_id, storage)
+    await update.message.reply_text(
+        "Unsubscribed specified tags.",
+        reply_markup=reply_markup,
+    )
 
 async def subscriptions_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     storage: JSONStorage = context.bot_data["storage"]
-    subs = storage.get_subscriptions(user_id)
+    reply_markup = build_subscription_keyboard(user_id, storage)
+    await update.message.reply_text(
+        "Your Subscriptions (click to toggle):",
+        reply_markup=reply_markup,
+    )
 
-    if not subs:
-        await update.message.reply_text("You have no active subscriptions. Use /subscribe <tag> to subscribe.")
-    else:
-        formatted_tags = ", ".join([f"#{t}" for t in sorted(subs)])
-        await update.message.reply_text(f"Your active subscriptions:\n{formatted_tags}")
+async def subscription_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    user_id = update.effective_user.id
+    storage: JSONStorage = context.bot_data["storage"]
+    data = query.data
+
+    if data.startswith("toggle_sub:"):
+        tag = data.split("toggle_sub:", 1)[1]
+        user_subs = storage.get_subscriptions(user_id)
+
+        if tag in user_subs:
+            storage.remove_subscriptions(user_id, [tag])
+        else:
+            storage.add_subscriptions(user_id, [tag])
+
+        reply_markup = build_subscription_keyboard(user_id, storage)
+        await query.edit_message_text(
+            "Your Subscriptions (click to toggle):",
+            reply_markup=reply_markup,
+        )
 
 async def channel_post_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -97,7 +150,6 @@ async def channel_post_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
     storage: JSONStorage = context.bot_data["storage"]
 
-    # Record message id if newer
     if channel_post.message_id > storage.get_last_processed_message_id():
         storage.set_last_processed_message_id(channel_post.message_id)
 
@@ -116,8 +168,5 @@ async def channel_post_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 async def check_channel_alerts_job(context: ContextTypes.DEFAULT_TYPE):
     """
     Periodic job running every CHECK_INTERVAL seconds.
-    Note: Standard Telegram Bot API doesn't allow fetching message history directly without receiving updates
-    or channel posts unless messages are handled via channel updates or user account API.
-    This job handles pending stored/buffered messages or channel polling checks if configured.
     """
     pass

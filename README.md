@@ -5,7 +5,8 @@ A Telegram bot that monitors an alert channel for messages containing specific h
 ## Features
 
 - **Hashtag Filtering**: Automatically parses incoming channel posts for hashtags.
-- **User Subscription Preferences**: Allows users to subscribe/unsubscribe to specific alert tags (e.g. `node_alerts_app`, `disk_alert_cons1`).
+- **Interactive Button Subscriptions**: Users can easily toggle subscription preferences using interactive inline message buttons (e.g. `✅ #node_alerts_app` / `❌ #disk_alert_cons1`).
+- **User Subscription Preferences**: Support for custom subscriptions via commands or interactive buttons.
 - **Persistent Storage**: Maintains user subscriptions and system processing state across restarts using JSON storage.
 - **Configurable Polling/Interval**: Configurable update interval and target channel ID.
 
@@ -40,14 +41,14 @@ Run the bot with:
 python main.py
 ```
 
-### Bot Commands
+### Bot Commands & Interactive Buttons
 
 Users can interact with the bot in private messages:
 
-- `/start` - Start the bot and get instructions.
-- `/subscribe <tag1> <tag2>` - Subscribe to alert hashtags (e.g., `/subscribe node_alerts_app disk_alert_cons1`).
-- `/unsubscribe <tag1> <tag2>` - Unsubscribe from alert hashtags (e.g., `/unsubscribe node_alerts_app`).
-- `/subscriptions` - List your active subscriptions.
+- `/start` - Start the bot and manage subscriptions via interactive inline buttons.
+- `/subscriptions` - Display interactive inline buttons to view and toggle alert topic subscriptions on/off.
+- `/subscribe <tag1> <tag2>` - Subscribe to specific alert hashtags (or view button menu if no tags provided).
+- `/unsubscribe <tag1> <tag2>` - Unsubscribe from specific alert hashtags.
 - `/help` - View usage and command guide.
 
 ## Testing
@@ -55,5 +56,5 @@ Users can interact with the bot in private messages:
 Run unit tests using `pytest`:
 
 ```bash
-pytest
+python -m pytest
 ```
