@@ -47,7 +47,7 @@ def main():
     application.add_handler(CommandHandler("subscriptions", subscriptions_handler))
 
     # Register callback query handler for inline subscription buttons
-    application.add_handler(CallbackQueryHandler(subscription_callback_handler))
+    application.add_handler(CallbackQueryHandler(subscription_callback_handler, pattern="^toggle_sub:"))
 
     # Register channel post handler (for channel updates)
     application.add_handler(MessageHandler(filters.ChatType.CHANNEL, channel_post_handler))

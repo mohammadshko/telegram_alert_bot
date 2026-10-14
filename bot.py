@@ -32,7 +32,8 @@ def build_subscription_keyboard(user_id: int, storage: JSONStorage) -> InlineKey
         is_subscribed = tag in user_subs
         status_symbol = "✅" if is_subscribed else "❌"
         button_text = f"{status_symbol} #{tag}"
-        callback_data = f"toggle_sub:{tag}"
+        # Telegram callback_data limit is 64 bytes
+        callback_data = f"toggle_sub:{tag}"[:64]
         keyboard.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
 
     return InlineKeyboardMarkup(keyboard)
@@ -118,31 +119,54 @@ async def subscription_callback_handler(update: Update, context: ContextTypes.DE
     if not query:
         return
 
-    user_id = update.effective_user.id
+    # Extract user ID reliably from effective_user or query.from_user
+    user = update.effective_user or query.from_user
+    user_id = user.id if user else None
+    if not user_id:
+        try:
+            await query.answer(text="User not identified.")
+        except Exception:
+            pass
+        return
+
     storage: JSONStorage = context.bot_data["storage"]
     data = query.data or ""
 
-    if data.startswith("toggle_sub:"):
-        tag = data.split("toggle_sub:", 1)[1]
-        user_subs = storage.get_subscriptions(user_id)
+    try:
+        if data.startswith("toggle_sub:"):
+            tag = data.split("toggle_sub:", 1)[1]
+            user_subs = storage.get_subscriptions(user_id)
 
-        if tag in user_subs:
-            storage.remove_subscriptions(user_id, [tag])
-            toast_text = f"Unsubscribed from #{tag}"
+            if tag in user_subs:
+                storage.remove_subscriptions(user_id, [tag])
+                toast_text = f"Unsubscribed from #{tag}"
+            else:
+                storage.add_subscriptions(user_id, [tag])
+                toast_text = f"Subscribed to #{tag}"
+
+            # Always answer callback query to remove loading spinner in Telegram client
+            try:
+                await query.answer(text=toast_text)
+            except Exception as e:
+                logger.warning(f"Failed to send query answer: {e}")
+
+            reply_markup = build_subscription_keyboard(user_id, storage)
+            try:
+                await query.edit_message_reply_markup(reply_markup=reply_markup)
+            except BadRequest as e:
+                if "Message is not modified" not in str(e):
+                    logger.error(f"Error updating inline keyboard markup: {e}")
         else:
-            storage.add_subscriptions(user_id, [tag])
-            toast_text = f"Subscribed to #{tag}"
-
-        await query.answer(text=toast_text)
-
-        reply_markup = build_subscription_keyboard(user_id, storage)
+            try:
+                await query.answer()
+            except Exception:
+                pass
+    except Exception as exc:
+        logger.exception(f"Unhandled error in subscription_callback_handler: {exc}")
         try:
-            await query.edit_message_reply_markup(reply_markup=reply_markup)
-        except BadRequest as e:
-            if "Message is not modified" not in str(e):
-                logger.error(f"Error updating inline keyboard: {e}")
-    else:
-        await query.answer()
+            await query.answer(text="Error processing button click. Please try again.")
+        except Exception:
+            pass
 
 async def channel_post_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
